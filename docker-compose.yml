@@ -1,0 +1,60 @@
+version: '3.2'
+
+# Configure pihole-unbound services
+services:
+  pihole:
+    env_file: .env
+    container_name: ${CONTAINER_NAME}
+    image: cbcrowe/pihole-unbound:latest
+    hostname: ${HOSTNAME}
+    domainname: ${DOMAIN_NAME}
+    networks:
+      - traefik-local
+      - backend
+    ports:
+      - 5001:443/tcp
+      - 53:53/tcp
+      - 53:53/udp
+      - 5000:80/tcp
+      # - 5335:5335/tcp # Uncomment to enable unbound access on local server
+      # - 22/tcp # Uncomment to enable SSH
+    environment:
+      ServerIP: ${ServerIP}
+      TZ: ${TZ}
+      WEBPASSWORD: ${WEBPASSWORD}
+      REV_SERVER: ${REV_SERVER}
+      #REV_SERVER_TARGET: ${REV_SERVER_TARGET}
+      #REV_SERVER_DOMAIN: ${REV_SERVER_DOMAIN}
+      #REV_SERVER_CIDR: ${REV_SERVER_CIDR}
+      DNS1: 127.0.0.1#5335 # Hardcode our Unbound server as the DNS resolver
+      DNS2: 127.0.0.1#5335 # Hardcode our Unbound server as the DNS resolver
+      DNSSEC: "true" # Enable DNSSEC
+    volumes:
+      - ${VOL1}:/etc/pihole:rw
+      - ${VOL2}:/etc/dnsmasq.d
+      # Inject your customized resolv.conf into the container. Otherwise comment this out.
+      - ./resolv.conf:/etc/resolv.conf
+    restart: unless-stopped
+# Configure Traefikv2 labels. If you don't want to use Traefikv2, remove or comment out the labels section.
+    labels:
+      - traefik.enable=true # Enable traefik to proxy this container
+      - traefik.docker.network=traefik-local # Traefik Network Name
+      - traefik.constraint-label=traefik-local
+      - traefik.http.routers.${CONTAINER_NAME}.rule=Host(`${HOSTNAME}.${DOMAIN_NAME}`) # Pulls from your .env config
+      - traefik.http.services.${CONTAINER_NAME}.loadbalancer.server.port=80
+      - traefik.http.routers.${CONTAINER_NAME}.entrypoints=websecure # Defining the entrypoint for http
+      - traefik.http.routers.${CONTAINER_NAME}.tls=true
+      - traefik.http.routers.${CONTAINER_NAME}.tls.certresolver=letsencrypt
+      - traefik.http.middlewares.${CONTAINER_NAME}.redirectscheme.scheme=https
+      - traefik.http.middlewares.${CONTAINER_NAME}.redirectscheme.permanent=true
+# Configure networks
+networks:
+  # Attach the Traefik proxy network. You must have already preconfigured this. Comment out if not using TraefikV2.
+  traefik-local:
+    external: true
+  # Define a unique docker network for the pihole container. Keeps things tidy.
+  backend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.99.1.0/24
